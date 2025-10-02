@@ -23,7 +23,7 @@ Supports sending **native XPL** and **ERC-20 tokens** to multiple addresses in o
 0x3df332e44a0bbff025838c187873d77f92caf5e9,0.001
 0x76d31966abf3edeb29e599eac4adcb72fba85e6a,1
 0xC8c30Fa803833dD1Fd6DBCDd91Ed0b301EFf87cF,3.45
-5. Click **Estimate & Validate**, then **Send**.
+6. Click **Estimate & Validate**, then **Send**.
 
 ## 🛠 Planned Improvements
 - Privacy mode with **stealth addresses**.
