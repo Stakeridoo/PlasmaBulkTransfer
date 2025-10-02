@@ -20,9 +20,11 @@ Supports sending **native XPL** and **ERC-20 tokens** to multiple addresses in o
 2. Connect your wallet (MetaMask or compatible).
 3. Select token (XPL, common ERC-20, or custom contract).
 4. Add addresses manually or upload CSV with format:
+   
 0x56e08bABb8bf928bD8571D2a2a78235ae57AE5Bd, 0.1
+
 0x56e08bABb8bf928bD8571D2a2a78235ae57AE5Bd, 0.1
-5. Click **Estimate & Validate**, then **Send**.
+6. Click **Estimate & Validate**, then **Send**.
 
 ## 🛠 Planned Improvements
 - Privacy mode with **stealth addresses**.
