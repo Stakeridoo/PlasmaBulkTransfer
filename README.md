@@ -19,10 +19,11 @@ Supports sending **native XPL** and **ERC-20 tokens** to multiple addresses in o
 1. Open the [Live App](https://stakeridoo.github.io/PlasmaBulkTransfer/).
 2. Connect your wallet (MetaMask or compatible).
 3. Select token (XPL, common ERC-20, or custom contract).
-4. Add addresses manually or upload CSV with format:  
+4. Add addresses manually or upload CSV with format:
+   
 0x3df332e44a0bbff025838c187873d77f92caf5e9,0.001
-
 0xC8c30Fa803833dD1Fd6DBCDd91Ed0b301EFf87cF,3.45
+
 6. Click **Estimate & Validate**, then **Send**.
 
 ## 🛠 Planned Improvements
