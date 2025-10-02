@@ -24,7 +24,12 @@
   .btn:active{transform:translateY(1px)} .btn.secondary{background:#143027; border-color:#224D43}
   .btn[disabled]{filter:grayscale(1) brightness(.75); cursor:not-allowed}
   .stack{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
-  .pill{padding:6px 10px; border-radius:999px; background:#0F241F; border:1px solid #1C3E36; color:#c6dfda; font-size:12px}
+  .status-panel{background:#0A1F1A; border:1px solid #245045; border-radius:12px; padding:12px 14px; min-height:100px}
+  .status-title{font-size:14px; color:#bfe0d9; margin-bottom:6px; opacity:.95}
+  .status-msg{font-size:15px; line-height:1.35; color:#e4faf5; white-space:pre-wrap}
+  .status-ok{color:#a7f3d0}
+  .status-warn{color:#fde68a}
+  .status-err{color:#fecaca}
   .log{background:#0A1F1A; border:1px dashed #245045; color:#c6dfda; padding:12px; border-radius:12px; min-height:160px; white-space:pre-wrap}
   .filebox{padding:10px 12px; border:1px dashed #245045; border-radius:12px; background:#0E221D; color:#c6dfda}
   .footer{margin-top:14px; color:#b8ccc7; font-size:12px}
@@ -41,13 +46,13 @@
       <div class="col">
         <div class="stack">
           <button id="btnConnect" class="btn">Connect Wallet</button>
-          <span id="status" class="pill">Not connected</span>
         </div>
         <div style="margin-top:10px; font-size:13px; color:#c6dfda">
           Chain: <span id="chainName">Plasma</span> •
           Contract: <a id="contractLink" href="#" target="_blank">—</a>
         </div>
       </div>
+
       <div class="col">
         <label>Token</label>
         <select id="tokenSelect">
@@ -92,7 +97,7 @@
             <input id="csvFile" type="file" accept=".csv" style="display:none" />
             Upload CSV
           </label>
-          <span id="csvName" class="pill">No file</span>
+          <span id="csvName" class="status-msg" style="font-size:12px; opacity:.8">No file</span>
         </div>
 
         <div class="stack" style="margin-top:12px">
@@ -103,11 +108,17 @@
       </div>
 
       <div class="col">
-        <label>Log</label>
+        <div class="status-panel">
+          <div class="status-title">Status</div>
+          <div id="statusMsg" class="status-msg">Not connected.</div>
+        </div>
+
+        <label style="margin-top:14px">Log</label>
         <div id="log" class="log">Ready.</div>
+
         <div class="footer">
-          Amounts are human units (e.g. <code>0.1</code>). We read <code>decimals()</code> automatically.
-          Fee = <strong>0.10%</strong> (ceil rounded) of total in the **same asset**.
+          Amounts are human units (e.g. 0.1). For ERC-20, we read <code>decimals()</code> and convert precisely.
+          Auto-chunking sizes each transaction to fit a target gas budget. There is a small fee of <strong>0.10%</strong> for using this service.
         </div>
       </div>
     </div>
@@ -126,7 +137,7 @@ const CONFIG = {
     nativeCurrency: { name: "XPL", symbol: "XPL", decimals: 18 }
   },
   CONTRACT: {
-    bulkSender: "0x571452919EE2A638766AC503BFa0522B1887722c" // your deployed V3
+    bulkSender: "0x571452919EE2A638766AC503BFa0522B1887722c"
   },
   TOKENS: {
     USDT0:      "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
@@ -144,7 +155,7 @@ const CONFIG = {
     sUSDai:     "0x0B2b2B2076d95dda7817e785989fE353fe955ef9"
   },
   GAS: {
-    targetPerTx: 7_000_000n, // heuristic, adjust if needed
+    targetPerTx: 7_000_000n,
     minChunk: 15,
     maxChunk: 200
   }
@@ -159,17 +170,18 @@ const BULK_ABI = [
 const ERC20_ABI = [
   {"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"approve","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"owner","type":"address"},{"internalType":"address","name":"spender","type":"address"}],"name":"allowance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}
 ];
 
 const $ = (id)=>document.getElementById(id);
-const logEl=$('log'), statusEl=$('status'), tokenSelect=$('tokenSelect'), customTokenWrap=$('customTokenWrap'), customToken=$('customToken');
+const statusMsg=$('statusMsg'), tokenSelect=$('tokenSelect'), customTokenWrap=$('customTokenWrap'), customToken=$('customToken');
 const btnConnect=$('btnConnect'), btnEstimate=$('btnEstimate'), btnSend=$('btnSend'), btnClear=$('btnClear');
 const manualEl=$('manual'), csvFile=$('csvFile'), csvName=$('csvName'), chainNameEl=$('chainName'), contractLinkEl=$('contractLink');
-const allowFailuresEl=$('allowFailures');
+const allowFailuresEl=$('allowFailures'), logEl=$('log');
 
-let injected, provider, signer, account, chainIdHex, bulk, tokenAddr=null, tokenSymbol='XPL', tokenDecimals=18;
+let provider, signer, account, bulk, tokenAddr=null, tokenSymbol='XPL', tokenDecimals=18;
 let parsedList = [];
 
 chainNameEl.textContent = CONFIG.CHAIN.chainName;
@@ -182,50 +194,43 @@ chainNameEl.textContent = CONFIG.CHAIN.chainName;
   }catch{}
 })();
 
-const log = (m,c)=>{ logEl.textContent += (logEl.textContent?'\n':'') + (c?`[${c.toUpperCase()}] `:'') + m; logEl.scrollTop = logEl.scrollHeight; };
-const setStatus = (t,c="")=>{ statusEl.textContent=t; statusEl.className="pill"+(c?(" "+c):""); };
+const log = (m,c)=>{ 
+  logEl.textContent += (logEl.textContent?'\n':'') + (c?`[${c.toUpperCase()}] `:'') + m; 
+  logEl.scrollTop = logEl.scrollHeight; 
+};
+const setStatus = (text, level="")=>{ 
+  statusMsg.textContent = text; 
+  statusMsg.classList.remove('status-ok','status-warn','status-err');
+  if (level) statusMsg.classList.add(`status-${level}`);
+};
 const isAddress = (a)=>{ try { return ethers.isAddress(a); } catch { return false; } };
 const toUnits = (s,d)=>ethers.parseUnits(s, d);
 const sumBig = (arr)=>arr.reduce((s,x)=> s + x, 0n);
 const chunkArray = (arr,size)=>{ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; };
+const short = (addr)=> addr.slice(0,6) + "…" + addr.slice(-4);
 
-function parseLines(){
-  const raw = manualEl.value.trim(); parsedList = [];
-  if (!raw) return parsedList;
-  for (const line of raw.split(/\r?\n/)) {
-    const t = line.trim(); if (!t || t.startsWith('#') || t.startsWith('//')) continue;
-    const parts = t.split(',').map(x=>x.trim());
-    if (parts.length !== 2) { log(`Ignored line (use "address,amount"): "${line}"`, "warn"); continue; }
-    parsedList.push({ addr: parts[0], amountDecimalStr: parts[1] });
+/** Simplified provider detection **/
+function detectProvider(){
+  if (window.ethereum?.providers?.length) {
+    const mm = window.ethereum.providers.find(p=>p && p.isMetaMask);
+    return mm || window.ethereum.providers[0];
   }
-  return parsedList;
+  if (window.ethereum) return window.ethereum;
+  return null;
 }
 
-// Wallet discovery (EIP-6963 + fallbacks)
-let discoveredProviders = [];
-window.addEventListener("eip6963:announceProvider",(e)=>{ const p=e.detail?.provider; if (p && !discoveredProviders.includes(p)) discoveredProviders.push(p); });
-window.dispatchEvent(new Event("eip6963:requestProvider"));
-function getCandidateProviders(){
-  const list=[...discoveredProviders];
-  if (window.ethereum?.providers?.length) for (const p of window.ethereum.providers) if (!list.includes(p)) list.push(p);
-  if (window.ethereum && !list.includes(window.ethereum)) list.push(window.ethereum);
-  return list;
-}
-async function pickProvider(){ const cand = getCandidateProviders(); if (!cand.length) return null; const mm = cand.find(p=>p.isMetaMask); return mm || cand[0]; }
-
-async function ensurePlasmaNetwork(p){
+async function ensurePlasmaNetwork(eth){
   try{
-    const cid = await p.request({ method:"eth_chainId" });
-    if (cid?.toLowerCase() === CONFIG.CHAIN.chainId.toLowerCase()) return true;
-    await p.request({ method:"wallet_switchEthereumChain", params:[{ chainId: CONFIG.CHAIN.chainId }] });
+    const chainId = await eth.request({ method:"eth_chainId" });
+    if ((chainId||"").toLowerCase() === CONFIG.CHAIN.chainId.toLowerCase()) return true;
+    await eth.request({ method:"wallet_switchEthereumChain", params:[{ chainId: CONFIG.CHAIN.chainId }] });
     return true;
   }catch(e){
     if (e.code===4902 || /Unrecognized chain/i.test(e.message)) {
-      await p.request({ method:"wallet_addEthereumChain", params:[CONFIG.CHAIN] });
+      await eth.request({ method:"wallet_addEthereumChain", params:[CONFIG.CHAIN] });
       return true;
     }
-    log(`Network switch failed: ${e.message}`, "warn");
-    return false;
+    throw e;
   }
 }
 
@@ -234,30 +239,42 @@ csvFile.addEventListener('change', async (e)=>{ const f=e.target.files?.[0]; if(
 
 btnConnect.addEventListener('click', async ()=>{
   try{
-    await new Promise(r=>setTimeout(r,150));
-    injected = await pickProvider();
-    if (!injected){ setStatus("No wallet", ""); log("No wallet provider found. Open via http://localhost:… or MetaMask in-app.", "err"); return; }
-    provider = new ethers.BrowserProvider(injected, "any");
-    await injected.request({ method:"eth_requestAccounts" });
-    const ok = await ensurePlasmaNetwork(injected);
-    if (!ok) log("Warning: wrong network – sending will fail.", "warn");
+    const eth = detectProvider();
+    if (!eth) { setStatus("No wallet provider found (MetaMask, Rabby, etc.).","err"); log("No wallet provider found. Open via http(s) and in a wallet-enabled browser.","err"); return; }
 
+    // Request accounts
+    await eth.request({ method:"eth_requestAccounts" });
+
+    // Ensure Plasma network
+    await ensurePlasmaNetwork(eth);
+
+    // Wire ethers
+    provider = new ethers.BrowserProvider(eth, "any");
     signer = await provider.getSigner();
     account = await signer.getAddress();
-    const net = await provider.getNetwork();
-    chainIdHex = "0x"+net.chainId.toString(16);
-    setStatus(`Connected: ${account.slice(0,6)}…${account.slice(-4)}`, "ok");
 
+    // Instantiate contract
     if (!ethers.isAddress(CONFIG.CONTRACT.bulkSender)) {
-      log("Set your Bulk Sender contract address in CONFIG.CONTRACT.bulkSender.", "warn");
+      setStatus("Contract address missing in config.","warn");
+      log("Set your Bulk Sender contract address in CONFIG.CONTRACT.bulkSender.","warn");
     } else {
       bulk = new ethers.Contract(CONFIG.CONTRACT.bulkSender, BULK_ABI, signer);
       contractLinkEl.textContent = CONFIG.CONTRACT.bulkSender.slice(0,6)+"…"+CONFIG.CONTRACT.bulkSender.slice(-4);
       contractLinkEl.href = `${CONFIG.CHAIN.blockExplorerUrls[0]}/address/${CONFIG.CONTRACT.bulkSender}`;
     }
-    injected.on?.("accountsChanged", ()=>location.reload());
-    injected.on?.("chainChanged", ()=>location.reload());
-  }catch(e){ setStatus("Connect failed",""); log(`ERROR Connect: ${e.message}`,"err"); }
+
+    // UI feedback
+    setStatus(`Connected: ${short(account)}`, "ok");
+    btnConnect.textContent = `Connected: ${short(account)}`;
+
+    // Handle changes (simple full reload to keep state consistent)
+    eth.on?.("accountsChanged", ()=>location.reload());
+    eth.on?.("chainChanged", ()=>location.reload());
+
+  }catch(e){
+    setStatus(`Connect failed: ${e.message || e}`, "err");
+    log(`ERROR Connect: ${e.message || e}`, "err");
+  }
 });
 
 async function resolveToken(){
@@ -270,7 +287,7 @@ async function resolveToken(){
     if (!isAddress(addr)) throw new Error("Custom ERC-20 address invalid.");
     tokenAddr = addr; tokenSymbol = "ERC20";
   }
-  // decimals & symbol best-effort
+  // decimals & symbol
   try{
     const erc20 = new ethers.Contract(tokenAddr, [
       {"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},
@@ -312,12 +329,19 @@ btnEstimate.addEventListener('click', async ()=>{
     if (!signer) throw new Error("Connect your wallet first.");
     if (!bulk) throw new Error("Set Bulk Sender address in config and reconnect.");
 
-    parseLines();
-    if (parsedList.length===0) throw new Error("No recipients found.");
-    for (const {addr, amountDecimalStr} of parsedList){
-      if (!isAddress(addr)) throw new Error(`Invalid address: ${addr}`);
-      if (!/^\d+(\.\d+)?$/.test(amountDecimalStr)) throw new Error(`Invalid amount: ${amountDecimalStr}`);
+    // Parse
+    parsedList = [];
+    const raw = manualEl.value.trim();
+    if (!raw) throw new Error("No recipients found.");
+    for (const line of raw.split(/\r?\n/)) {
+      const t=line.trim(); if (!t || t.startsWith('#') || t.startsWith('//')) continue;
+      const parts = t.split(',').map(x=>x.trim());
+      if (parts.length !== 2) throw new Error(`Invalid line: "${line}" (use "address,amount")`);
+      if (!isAddress(parts[0])) throw new Error(`Invalid address: ${parts[0]}`);
+      if (!/^\d+(\.\d+)?$/.test(parts[1])) throw new Error(`Invalid amount: ${parts[1]}`);
+      parsedList.push({ addr: parts[0], amountDecimalStr: parts[1] });
     }
+
     await resolveToken();
 
     const recipients = parsedList.map(x=>x.addr);
@@ -330,15 +354,20 @@ btnEstimate.addEventListener('click', async ()=>{
     const humanFee   = isNative?ethers.formatEther(fee)  :ethers.formatUnits(fee, tokenDecimals);
     log(`Totals → amount: ${humanTotal} ${isNative?'XPL':tokenSymbol} | fee: ${humanFee} ${isNative?'XPL':tokenSymbol}`);
 
-    // balance hints
+    // HARD BALANCE CHECKS
     if (isNative){
       const bal = await provider.getBalance(await signer.getAddress());
-      if (bal < (total + fee)) log(`WARN: XPL balance < total+fee (${ethers.formatEther(total+fee)} XPL needed)`, "warn");
+      if (bal < (total + fee)) {
+        throw new Error(`You don't have enough XPL. Needed ${ethers.formatEther(total+fee)} XPL, balance ${ethers.formatEther(bal)} XPL.`);
+      }
     } else {
-      const erc20 = new ethers.Contract(tokenAddr, [{"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}], signer);
+      const erc20 = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
       const me = await signer.getAddress();
       const bal = await erc20.balanceOf(me);
-      if (bal < (total + fee)) log(`WARN: ${tokenSymbol} balance < total+fee (${ethers.formatUnits(total+fee, tokenDecimals)} ${tokenSymbol} needed)`, "warn");
+      const needed = total + fee;
+      if (bal < needed) {
+        throw new Error(`You don't have enough ${tokenSymbol}. Needed ${ethers.formatUnits(needed, tokenDecimals)} ${tokenSymbol}, balance ${ethers.formatUnits(bal, tokenDecimals)} ${tokenSymbol}.`);
+      }
     }
 
     const chunkSize = await pickChunkSize(recipients, amounts, isNative);
@@ -346,11 +375,11 @@ btnEstimate.addEventListener('click', async ()=>{
     log(`Auto-chunking: ${chunkSize} recipients/tx (target gas ~${CONFIG.GAS.targetPerTx})`);
     btnSend.disabled = false;
     btnSend.dataset.chunkSize = String(chunkSize);
-    setStatus("Ready to send", "ok");
+    setStatus("Ready to send","ok");
   }catch(e){
     btnSend.disabled = true;
-    setStatus("Validation error", "");
-    log(`ERROR (Estimate): ${e.message}`, "err");
+    setStatus(`Validation error: ${e.message || e}`, "err");
+    log(`ERROR (Estimate): ${e.message || e}`, "err");
   }
 });
 
@@ -358,7 +387,6 @@ btnSend.addEventListener('click', async ()=>{
   try{
     if (!signer || !bulk) throw new Error("Not connected / contract missing.");
     await resolveToken();
-    parseLines();
 
     const recipients = parsedList.map(x=>x.addr);
     const amounts    = parsedList.map(x=>toUnits(x.amountDecimalStr, tokenDecimals));
@@ -373,31 +401,61 @@ btnSend.addEventListener('click', async ()=>{
         const r=chunksR[i], a=chunksA[i];
         const subtotal = a.reduce((s,x)=>s + x, 0n);
         const fee      = await bulk.quoteFeeOnAmount(subtotal);
+
+        const bal = await provider.getBalance(await signer.getAddress());
+        if (bal < (subtotal + fee)) {
+          throw new Error(`Insufficient XPL for chunk ${i+1}/${chunksR.length}. Needed ${ethers.formatEther(subtotal+fee)} XPL, balance ${ethers.formatEther(bal)} XPL.`);
+        }
+
         log(`Sending native chunk ${i+1}/${chunksR.length} … need value=${ethers.formatEther(subtotal+fee)} XPL`);
         const tx = await bulk.sendNative(r, a, { value: subtotal + fee });
         log(`Tx sent: ${tx.hash}`); await tx.wait(); log(`Tx confirmed ✅`);
       }
     } else {
       const useAllow = !!allowFailuresEl.checked;
-      if (useAllow){
-        // Approve max (total + feeMax) once; contract refundet Überschuss
-        const feeMax = await bulk.quoteFeeOnAmount(total);
-        const erc20 = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
-        log(`Approving ${ethers.formatUnits(total+feeMax, tokenDecimals)} ${tokenSymbol} (allow-failures)…`);
-        const txA = await erc20.approve(CONFIG.CONTRACT.bulkSender, total + feeMax);
-        await txA.wait(); log(`Approve confirmed: ${txA.hash}`);
+      const erc20 = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
+      const me = await signer.getAddress();
 
-        // Kein Chunking, weil Refunds einfacher pro Batch sind
+      if (useAllow){
+        const feeMax = await bulk.quoteFeeOnAmount(total);
+        const needed = total + feeMax;
+
+        const bal = await erc20.balanceOf(me);
+        if (bal < needed) {
+          throw new Error(`You don't have enough ${tokenSymbol}. Needed ${ethers.formatUnits(needed, tokenDecimals)} ${tokenSymbol}, balance ${ethers.formatUnits(bal, tokenDecimals)} ${tokenSymbol}.`);
+        }
+
+        const curr = await erc20.allowance(me, CONFIG.CONTRACT.bulkSender);
+        if (curr < needed) {
+          const delta = needed - curr;
+          log(`Approving additional ${ethers.formatUnits(delta, tokenDecimals)} ${tokenSymbol} (allow-failures)…`);
+          const txA = await erc20.approve(CONFIG.CONTRACT.bulkSender, needed);
+          await txA.wait(); log(`Approve confirmed: ${txA.hash}`);
+        } else {
+          log(`Allowance OK: ${ethers.formatUnits(curr, tokenDecimals)} ${tokenSymbol}`);
+        }
+
         log(`Sending ERC-20 (allow failures) batch of ${recipients.length} …`);
         const tx = await bulk.sendERC20AllowFailures(tokenAddr, recipients, amounts);
-        log(`Tx sent: ${tx.hash}`); await tx.wait(); log(`Tx confirmed ✅ (contract refunded any failures)`);
+        log(`Tx sent: ${tx.hash}`); await tx.wait(); log(`Tx confirmed ✅ (refunds handled on-chain)`);
       } else {
-        // Atomic path: chunked
         const fee = await bulk.quoteFeeOnAmount(total);
-        const erc20 = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
-        log(`Approving ${ethers.formatUnits(total+fee, tokenDecimals)} ${tokenSymbol} (atomic)…`);
-        const txA = await erc20.approve(CONFIG.CONTRACT.bulkSender, total + fee);
-        await txA.wait(); log(`Approve confirmed: ${txA.hash}`);
+        const needed = total + fee;
+
+        const bal = await erc20.balanceOf(me);
+        if (bal < needed) {
+          throw new Error(`You don't have enough ${tokenSymbol}. Needed ${ethers.formatUnits(needed, tokenDecimals)} ${tokenSymbol}, balance ${ethers.formatUnits(bal, tokenDecimals)} ${tokenSymbol}.`);
+        }
+
+        const curr = await erc20.allowance(me, CONFIG.CONTRACT.bulkSender);
+        if (curr < needed) {
+          const delta = needed - curr;
+          log(`Approving additional ${ethers.formatUnits(delta, tokenDecimals)} ${tokenSymbol} (atomic)…`);
+          const txA = await erc20.approve(CONFIG.CONTRACT.bulkSender, needed);
+          await txA.wait(); log(`Approve confirmed: ${txA.hash}`);
+        } else {
+          log(`Allowance OK: ${ethers.formatUnits(curr, tokenDecimals)} ${tokenSymbol}`);
+        }
 
         for (let i=0;i<chunksR.length;i++){
           const r=chunksR[i], a=chunksA[i];
@@ -407,16 +465,21 @@ btnSend.addEventListener('click', async ()=>{
         }
       }
     }
-    setStatus("Done", "ok");
+    setStatus("Done","ok");
     log("All done ✅✅✅");
   }catch(e){
-    setStatus("Send error", "");
-    log(`ERROR (Send): ${e.message}`, "err");
+    setStatus(`Send error: ${e.message || e}`, "err");
+    log(`ERROR (Send): ${e.message || e}`, "err");
   }
 });
 
 btnClear.addEventListener('click', ()=>{
-  manualEl.value=""; csvFile.value=""; csvName.textContent="No file"; btnSend.disabled=true; log("Reset.");
+  manualEl.value="";
+  csvFile.value="";
+  csvName.textContent="No file";
+  btnSend.disabled=true;
+  logEl.textContent="Ready.";
+  log("Reset.");
 });
 </script>
 </body>
