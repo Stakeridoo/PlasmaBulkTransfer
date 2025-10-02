@@ -14,7 +14,7 @@
   .wrap{max-width:980px; margin:40px auto; padding:0 16px}
   .card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:0 10px 40px rgba(0,0,0,.35)}
   h1{font-size:28px; margin:0 0 8px}
-  .sub{color:var(--muted); margin-bottom:18px}
+  .sub{color:var(--muted); margin-bottom:18px; line-height:1.5}
   .row{display:flex; gap:16px; flex-wrap:wrap}
   .col{flex:1 1 320px; min-width:280px}
   label{display:block; color:#cde3de; margin:10px 0 6px; font-size:14px}
@@ -32,7 +32,7 @@
   .status-err{color:#fecaca}
   .log{background:#0A1F1A; border:1px dashed #245045; color:#c6dfda; padding:12px; border-radius:12px; min-height:160px; white-space:pre-wrap}
   .filebox{padding:10px 12px; border:1px dashed #245045; border-radius:12px; background:#0E221D; color:#c6dfda}
-  .footer{margin-top:14px; color:#b8ccc7; font-size:12px}
+  .footer{margin-top:14px; color:#b8ccc7; font-size:12px; line-height:1.4}
   a,a:visited{color:#79BFB0; text-decoration:none}
 </style>
 </head>
@@ -40,7 +40,14 @@
 <div class="wrap">
   <div class="card">
     <h1>Plasma Bulk Sender</h1>
-    <div class="sub">Send native XPL or ERC-20 tokens to many recipients. Paste <code>address,amount</code> lines or upload a CSV.</div>
+    <div class="sub">
+      🚀 Do you want to airdrop your token to thousands of users in minutes?<br>
+      💸 Do you need to pay salaries to 100 employees at once?<br>
+      🎁 Or reward your community with fast mass payouts?<br><br>
+      With <strong>Plasma Bulk Sender</strong> you can send native <strong>XPL</strong> or any ERC-20 token 
+      to hundreds of recipients in one go. Just paste a list of <code>address,amount</code> lines 
+      or upload a CSV and let the tool handle the rest.
+    </div>
 
     <div class="row" style="margin-bottom:12px">
       <div class="col">
@@ -74,13 +81,6 @@
         </select>
         <div id="customTokenWrap" style="display:none; margin-top:8px">
           <input id="customToken" type="text" placeholder="0x… (ERC-20 address)" />
-        </div>
-
-        <div style="margin-top:8px">
-          <label style="display:flex;align-items:center;gap:8px;">
-            <input id="allowFailures" type="checkbox" />
-            <span>Allow partial failures (refund on failures)</span>
-          </label>
         </div>
       </div>
     </div>
@@ -117,8 +117,10 @@
         <div id="log" class="log">Ready.</div>
 
         <div class="footer">
-          Amounts are human units (e.g. 0.1). For ERC-20, we read <code>decimals()</code> and convert precisely.
-          Auto-chunking sizes each transaction to fit a target gas budget. There is a small fee of <strong>0.10%</strong> for using this service.
+          Amounts are human units (e.g. <code>0.1</code>). For ERC-20, we read <code>decimals()</code> and convert precisely.<br>
+          Transactions are automatically chunked: up to <strong>200 recipients per transaction</strong>.  
+          Longer lists are seamlessly split into multiple transactions until all recipients are covered.<br>
+          A small service fee of <strong>0.10%</strong> applies to each batch.
         </div>
       </div>
     </div>
